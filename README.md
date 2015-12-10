@@ -156,7 +156,7 @@ output {
     codec => rubydebug
   }
   elasticsearch {
-    host => db
+    hosts => ["db"]
   }
 }
 EOL
@@ -164,11 +164,11 @@ EOL
 
 ### Install ELK stack on docker
 ```
-docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --name elasticsearch elasticsearch:1.7.3
+docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --name elasticsearch elasticsearch:2.1.0
 
-docker run -d --restart=always --link elasticsearch -p 5601:5601 --name kibana kibana:4.1.2
+docker run -d --restart=always --link elasticsearch -p 5601:5601 --name kibana kibana:4.3.0
 
-docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/conf -p 25826:25826 --name logstash logstash:1.5.4-1 logstash -f /conf/syslog.conf
+docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/conf -p 25826:25826 --name logstash logstash:2.1.1-1 logstash -f /conf/syslog.conf
 ```
 
 ### Check if ELK is runnung
@@ -197,9 +197,9 @@ server {
     try_files $uri $uri/ =404;
   }
 
-  location ~* /ops/.* {
-    rewrite ^/ops/(.*) /$1 break;
-    
+  location ~* /.* {
+    rewrite ^/(.*) /$1 break;
+
     proxy_pass http://127.0.0.1:5601;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -224,7 +224,7 @@ service rsyslog restart
 
 ### Access kibana 
 
-[http://ip-of-server/ops/](http://ip-of-server/ops/)
+[http://ip-of-server/ops/](http://ip-of-server/)
 
 ### Log to syslog
 ```
