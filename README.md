@@ -62,7 +62,7 @@ Updates are simple, just throw away server, run new version from repository
 
 ## ELK Phoenix Server on Docker
 
-* Grab Ubuntu 14.04 box from [https://cloud.digitalocean.com](https://cloud.digitalocean.com)
+* Grab Ubuntu 16.04 box from [https://cloud.digitalocean.com](https://cloud.digitalocean.com)
 * Install Firewall & Frontend NGINX Proxy
 * Install Docker
 * Install ELK on Docker from official repository
@@ -92,16 +92,6 @@ ufw --force enable
 
 ```
 wget -qO- https://get.docker.com/ | sh
-```
-
-Set docker network defaults - bind docker to localhost instead of all interfaces
-
-```
-cat >/etc/default/docker <<'EOL'
-DOCKER_OPTS="--dns 8.8.8.8 --dns 8.8.4.4 --ip 127.0.0.1"
-EOL
-
-service docker restart
 ```
 
 ### Install ELK folder structure on host
@@ -152,9 +142,6 @@ filter {
 }
  
 output {
-  stdout {
-    codec => rubydebug
-  }
   elasticsearch {
     hosts => ["db"]
   }
@@ -162,13 +149,23 @@ output {
 EOL
 ```
 
+### Create isolated network for ELK components
+```
+docker network create --driver bridge isolated_elk
+```
+
 ### Install ELK stack on docker
 ```
-docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --name elasticsearch elasticsearch:2.1.0
+docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --net=isolated_elk -p 127.0.0.1:9200:9200  -p 127.0.0.1:9300:9300 --name elasticsearch elasticsearch:2.3.2
 
-docker run -d --restart=always --link elasticsearch -p 5601:5601 --name kibana kibana:4.3.0
+docker run -d --restart=always --link elasticsearch --net=isolated_elk -p 127.0.0.1:5601:5601 --name kibana kibana:4.5.1
 
-docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/conf -p 25826:25826 --name logstash logstash:2.1.1-1 logstash -f /conf/syslog.conf
+docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/conf --net=isolated_elk -p 127.0.0.1:25826:25826 --name logstash logstash:2.3.2-1 logstash -f /conf/syslog.conf
+```
+
+### Check isolated ELK network
+```
+docker network inspect isolated_elk
 ```
 
 ### Check if ELK is runnung
@@ -176,10 +173,16 @@ docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/
 docker ps
 ```
 
-### Install nginx and forward /ops to kibana
+### Install nginx and forward to Kibana
 
 ```
 apt-get -y install nginx
+```
+#### password-protect Kibana
+
+```
+apt-get -y install apache2-utils
+htpasswd -c /etc/nginx/.htpasswd ops
 ```
 
 ```
@@ -198,6 +201,9 @@ server {
   }
 
   location ~* /.* {
+    auth_basic "Restricted";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    
     rewrite ^/(.*) /$1 break;
 
     proxy_pass http://127.0.0.1:5601;
@@ -224,7 +230,7 @@ service rsyslog restart
 
 ### Access kibana 
 
-[http://ip-of-server/ops/](http://ip-of-server/)
+[http://ip-of-server/](http://ip-of-server/)
 
 ### Log to syslog
 ```
@@ -237,3 +243,63 @@ logger -s -p 1 "This is one more fake error..."
 ```
 docker run --log-driver syslog ubuntu echo "Test"
 ```
+
+## topbeat
+
+Topbeat [https://www.elastic.co/guide/en/beats/topbeat/1.2/index.html](https://www.elastic.co/guide/en/beats/topbeat/1.2/index.html) collects server statistics and feeds them into logstash.
+
+### Install topbeat
+
+```
+curl -L -O https://download.elastic.co/beats/topbeat/topbeat_1.2.3_amd64.deb
+sudo dpkg -i topbeat_1.2.3_amd64.deb
+```
+
+### Load the topbeat template into Elasticsearch
+```
+git clone https://github.com/elastic/beats.git
+```
+```
+curl -XPUT 'http://localhost:9200/_template/topbeat' -d@beats/topbeat/topbeat.template.json
+```
+
+### Add index and dashboard to Kibana
+
+```
+curl -XPUT http://localhost:9200/.kibana/index-pattern/topbeat-* -d @beats/topbeat/etc/kibana/index-pattern/topbeat.json || exit 1
+echo
+
+for file in beats/topbeat/etc/kibana/search/*.json
+do
+    NAME=`basename ${file} .json`
+    curl -XPUT http://localhost:9200/.kibana/search/${NAME} -d @${file} || exit 1
+    echo
+done
+
+for file in beats/topbeat/etc/kibana/visualization/*.json
+do
+    NAME=`basename ${file} .json`
+    curl -XPUT http://localhost:9200/.kibana/visualization/${NAME} -d @${file} || exit 1
+    echo
+done
+
+for file in beats/topbeat/etc/kibana/dashboard/*.json
+do
+    NAME=`basename ${file} .json`
+    curl -XPUT http://localhost:9200/.kibana/dashboard/${NAME} -d @${file} || exit 1
+    echo
+done
+```
+
+### Start Topbeat
+```
+service topbeat start
+```
+
+### Optional - Configure Topbeat
+```
+vi /etc/topbeat/topbeat.yml
+service topbeat restart
+```   
+
+
