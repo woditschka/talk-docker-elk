@@ -86,6 +86,12 @@ ufw allow 80/tcp
 ufw --force enable
 ```
 
+### Increase vm.max_map_count
+
+```
+sysctl -w vm.max_map_count=262144
+```
+
 ### Install Docker
 
 [https://docs.docker.com/installation/ubuntulinux/](https://docs.docker.com/installation/ubuntulinux/)
