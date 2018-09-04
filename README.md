@@ -157,21 +157,21 @@ EOL
 
 ### Create isolated network for ELK components
 ```
-docker network create --driver bridge isolated_elk
+docker network create --driver bridge isolated-elk
 ```
 
 ### Install ELK stack on docker
 ```
-docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --net=isolated_elk -p 127.0.0.1:9200:9200  -p 127.0.0.1:9300:9300 --name elasticsearch elasticsearch:2.3.2
+docker run -d --restart=always -v /var/docker/elasticsearch:/usr/share/elasticsearch/data --net=isolated-elk -p 127.0.0.1:9200:9200  -p 127.0.0.1:9300:9300 --name elasticsearch docker.elastic.co/elasticsearch/elasticsearch:6.4.0
 
-docker run -d --restart=always --link elasticsearch --net=isolated_elk -p 127.0.0.1:5601:5601 --name kibana kibana:4.5.1
+docker run -d --restart=always --link elasticsearch --net=isolated-elk -p 127.0.0.1:5601:5601 --name kibana docker.elastic.co/kibana/kibana:6.4.0
 
-docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/conf --net=isolated_elk -p 127.0.0.1:25826:25826 --name logstash logstash:2.3.2-1 logstash -f /conf/syslog.conf
+docker run -d --restart=always --link elasticsearch:db -v /var/docker/logstash:/usr/share/logstash/pipeline/ --net=isolated-elk -p 127.0.0.1:25826:25826 --name logstash docker.elastic.co/logstash/logstash:6.4.0
 ```
 
 ### Check isolated ELK network
 ```
-docker network inspect isolated_elk
+docker network inspect isolated-elk
 ```
 
 ### Check if ELK is runnung
@@ -249,63 +249,3 @@ logger -s -p 1 "This is one more fake error..."
 ```
 docker run --log-driver syslog ubuntu echo "Test"
 ```
-
-## topbeat
-
-Topbeat [https://www.elastic.co/guide/en/beats/topbeat/1.2/index.html](https://www.elastic.co/guide/en/beats/topbeat/1.2/index.html) collects server statistics and feeds them into logstash.
-
-### Install topbeat
-
-```
-curl -L -O https://download.elastic.co/beats/topbeat/topbeat_1.2.3_amd64.deb
-sudo dpkg -i topbeat_1.2.3_amd64.deb
-```
-
-### Load the topbeat template into Elasticsearch
-```
-git clone https://github.com/elastic/beats.git
-```
-```
-curl -XPUT 'http://localhost:9200/_template/topbeat' -d@beats/topbeat/topbeat.template.json
-```
-
-### Add index and dashboard to Kibana
-
-```
-curl -XPUT http://localhost:9200/.kibana/index-pattern/topbeat-* -d @beats/topbeat/etc/kibana/index-pattern/topbeat.json || exit 1
-echo
-
-for file in beats/topbeat/etc/kibana/search/*.json
-do
-    NAME=`basename ${file} .json`
-    curl -XPUT http://localhost:9200/.kibana/search/${NAME} -d @${file} || exit 1
-    echo
-done
-
-for file in beats/topbeat/etc/kibana/visualization/*.json
-do
-    NAME=`basename ${file} .json`
-    curl -XPUT http://localhost:9200/.kibana/visualization/${NAME} -d @${file} || exit 1
-    echo
-done
-
-for file in beats/topbeat/etc/kibana/dashboard/*.json
-do
-    NAME=`basename ${file} .json`
-    curl -XPUT http://localhost:9200/.kibana/dashboard/${NAME} -d @${file} || exit 1
-    echo
-done
-```
-
-### Start Topbeat
-```
-service topbeat start
-```
-
-### Optional - Configure Topbeat
-```
-vi /etc/topbeat/topbeat.yml
-service topbeat restart
-```   
-
-
